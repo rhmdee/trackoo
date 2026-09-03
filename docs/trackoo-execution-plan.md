@@ -40,10 +40,10 @@ Untuk mempercepat pengembangan dan menjaga biaya tetap rendah di awal:
 - [x] Setup *environment variables* (API Keys, DB Credentials).
 
 ### Phase 2: NLP Integration & Core Logging (Minggu 2)
-- [ ] Setup integrasi dengan LLM API (OpenAI / Gemini) beserta *system prompt* khusus untuk mem-parsing pesan.
-- [ ] Implementasi *webhook/polling* untuk mendengarkan pesan teks (*free-text*).
-- [ ] Alur (Flow): Terima teks -> Kirim ke LLM -> Terima JSON hasil *parsing* -> Validasi -> Simpan ke tabel `transactions`.
-- [ ] Bot memberikan balasan konfirmasi sukses pencatatan (contoh: "✅ *Berhasil mencatat Pengeluaran Rp 50.000 untuk Makanan*").
+- [x] Setup integrasi dengan LLM API (OpenAI / Gemini) beserta *system prompt* khusus untuk mem-parsing pesan.
+- [x] Implementasi *webhook/polling* untuk mendengarkan pesan teks (*free-text*).
+- [x] Alur (Flow): Terima teks -> Kirim ke LLM -> Terima JSON hasil *parsing* -> Validasi -> Simpan ke tabel `transactions`.
+- [x] Bot memberikan balasan konfirmasi sukses pencatatan (contoh: "✅ *Berhasil mencatat Pengeluaran Rp 50.000 untuk Makanan*").
 
 ### Phase 3: Reporting & Debts (Minggu 3)
 - [ ] Implementasi perintah `/summary`. Membuat *query* agregasi DB (SUM amount berdasarkan tipe) untuk bulan berjalan.
