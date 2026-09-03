@@ -70,7 +70,7 @@ bot.help((ctx) => {
   );
 });
 
-// --- LISTENER PESAN TEKS BEBAS ---
+// --- LISTENER PESAN TEKS BEBAS (NLP PARSING & DATABASE SAVE) ---
 bot.on('text', async (ctx) => {
   // Abaikan pesan jika diawali dengan "/" (karena itu adalah command)
   if (ctx.message.text.startsWith('/')) {
@@ -78,12 +78,77 @@ bot.on('text', async (ctx) => {
   }
 
   const text = ctx.message.text;
-  const telegramId = ctx.message.from.id.toString();
+  const user = ctx.message.from;
+  const telegramId = user.id.toString();
+  const firstName = user.first_name || '';
+  const username = user.username || '';
 
-  // Kirim feedback 'mengetik...' agar bot terlihat responsif
+  console.log(`[CHAT] Pesan masuk dari ${firstName} (${telegramId}): "${text}"`);
+
+  // Pastikan user terdaftar di tabel users terlebih dahulu
+  const ensureUserQuery = `
+    INSERT INTO users (telegram_id, first_name, username)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (telegram_id) DO UPDATE
+    SET first_name = EXCLUDED.first_name, username = EXCLUDED.username;
+  `;
+  try {
+    await query(ensureUserQuery, [telegramId, firstName, username]);
+  } catch (err) {
+    console.error("Gagal memastikan user:", err);
+  }
+
+  // Kirim action 'typing' agar bot terlihat sedang memproses
   await ctx.sendChatAction('typing');
 
-  console.log(`[CHAT] Pesan masuk dari ${telegramId}: ${text}`);
+  // 1. Parsing dengan Gemini AI
+  const data = await parseTransaction(text);
+
+  if (!data || !data.amount || !data.type) {
+    return ctx.reply("Sori, gue kurang paham nih. Coba ketik lebih jelas ya, misal: 'Beli kopi 25rb'. 🤔");
+  }
+
+  // 2. Simpan ke tabel transactions di database
+  const insertTxQuery = `
+    INSERT INTO transactions (user_id, amount, type, category, counterparty, description)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING id;
+  `;
+
+  try {
+    await query(insertTxQuery, [
+      telegramId,
+      data.amount,
+      data.type,
+      data.category || 'Lain-lain',
+      data.counterparty || null,
+      data.description || text
+    ]);
+
+    // 3. Format Balasan Konfirmasi Santai (Format Rupiah)
+    const formatRp = new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      maximumFractionDigits: 0
+    }).format(data.amount);
+
+    let replyMsg = "";
+    if (data.type === 'EXPENSE') {
+      replyMsg = `💸 Sip, pengeluaran *${formatRp}* buat *${data.category}* udah gue catat ya.`;
+    } else if (data.type === 'INCOME') {
+      replyMsg = `💰 Asik! Pemasukan *${formatRp}* (${data.category}) udah masuk buku.`;
+    } else if (data.type === 'DEBT') {
+      replyMsg = `🤝 Oke, utang lo ke *${data.counterparty || 'temen'}* sebesar *${formatRp}* udah dicatat.`;
+    } else if (data.type === 'RECEIVABLE') {
+      replyMsg = `📝 Mantap, piutang *${data.counterparty || 'temen'}* sebesar *${formatRp}* ke lo udah gue ingat.`;
+    }
+
+    await ctx.reply(replyMsg, { parse_mode: 'Markdown' });
+
+  } catch (err) {
+    console.error("Gagal simpan transaksi:", err);
+    await ctx.reply("Duh, server lagi gangguan dikit nih. Gagal nyimpen data. Coba lagi bentar ya! 🛠️");
+  }
 });
 
 // Jalankan Bot
