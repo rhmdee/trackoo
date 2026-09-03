@@ -226,7 +226,55 @@ bot.on('text', async (ctx) => {
     return ctx.reply("Masa iya jumlah transaksinya nol? Yang bener aja dong! 😅");
   }
 
-  // 2. Simpan ke tabel transactions di database
+  // Khusus Pendaftaran Cicilan Baru (INSTALLMENT)
+  if (data.type === 'INSTALLMENT') {
+    const tenor = data.tenor && data.tenor > 0 ? data.tenor : 1;
+    const monthlyAmount = Math.ceil(data.amount / tenor);
+
+    const insertInstQuery = `
+      INSERT INTO installments (user_id, counterparty, description, total_amount, monthly_amount, tenor, due_date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id;
+    `;
+
+    try {
+      await query(insertInstQuery, [
+        telegramId,
+        data.counterparty || 'Lain-lain',
+        data.description || text,
+        data.amount,
+        monthlyAmount,
+        tenor,
+        data.due_date || null
+      ]);
+
+      const formatRp = (num: number) =>
+        new Intl.NumberFormat('id-ID', {
+          style: 'currency',
+          currency: 'IDR',
+          maximumFractionDigits: 0
+        }).format(num);
+
+      const jatuhTempoInfo = data.due_date ? `\n• Jatuh Tempo: *Tiap tgl ${data.due_date}*` : '';
+
+      const replyInst =
+        `📝 *Cicilan Baru Berhasil Dicatat!*\n\n` +
+        `• Pihak: *${data.counterparty || 'Lain-lain'}*\n` +
+        `• Keterangan: *${data.description}*\n` +
+        `• Total Tagihan: *${formatRp(data.amount)}*\n` +
+        `• Tenor: *${tenor}x* cicilan\n` +
+        `• Angsuran/bulan: *${formatRp(monthlyAmount)}*` +
+        jatuhTempoInfo +
+        `\n\nSemangat bayarnya bosku, biar cepet lunas! 💪`;
+
+      return ctx.reply(replyInst, { parse_mode: 'Markdown' });
+    } catch (err) {
+      console.error("Gagal mencatat cicilan:", err);
+      return ctx.reply("Waduh, gagal nyimpen data cicilannya ke database. Coba lagi ya! 🛠️");
+    }
+  }
+
+  // 2. Simpan ke tabel transactions di database (untuk EXPENSE, INCOME, DEBT, RECEIVABLE)
   const insertTxQuery = `
     INSERT INTO transactions (user_id, amount, type, category, counterparty, description)
     VALUES ($1, $2, $3, $4, $5, $6)
