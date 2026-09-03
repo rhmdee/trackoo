@@ -46,10 +46,10 @@ Untuk mempercepat pengembangan dan menjaga biaya tetap rendah di awal:
 - [x] Bot memberikan balasan konfirmasi sukses pencatatan (contoh: "✅ *Berhasil mencatat Pengeluaran Rp 50.000 untuk Makanan*").
 
 ### Phase 3: Reporting & Debts (Minggu 3)
-- [ ] Implementasi perintah `/summary`. Membuat *query* agregasi DB (SUM amount berdasarkan tipe) untuk bulan berjalan.
-- [ ] Implementasi perintah `/hutang`. Membuat *query* untuk menampilkan daftar transaksi dengan tipe `DEBT` dan `RECEIVABLE`.
-- [ ] Testing *edge cases* (contoh: pengguna memasukkan teks *ngawur*, LLM gagal *parsing*).
-- [ ] *Deployment* ke server *production*.
+- [x] Implementasi perintah `/summary`. Membuat *query* agregasi DB (SUM amount berdasarkan tipe) untuk bulan berjalan.
+- [x] Implementasi perintah `/hutang`. Membuat *query* untuk menampilkan daftar transaksi dengan tipe `DEBT` dan `RECEIVABLE`.
+- [x] Testing *edge cases* (contoh: pengguna memasukkan teks *ngawur*, LLM gagal *parsing*).
+- [x] *Deployment* ke server *production*.
 
 ### Phase 4 (Post-MVP / Masa Depan)
 - Integrasi OCR (membaca gambar struk).
