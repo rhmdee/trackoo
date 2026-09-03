@@ -426,9 +426,11 @@ bot.on('text', async (ctx) => {
   }
 
   // 2. Simpan ke tabel transactions di database (untuk EXPENSE, INCOME, DEBT, RECEIVABLE)
+  const txDate = data.transaction_date ? new Date(data.transaction_date) : new Date();
+
   const insertTxQuery = `
-    INSERT INTO transactions (user_id, amount, type, category, counterparty, description)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO transactions (user_id, amount, type, category, counterparty, description, transaction_date)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     RETURNING id;
   `;
 
@@ -439,7 +441,8 @@ bot.on('text', async (ctx) => {
       data.type,
       data.category || 'Lain-lain',
       data.counterparty || null,
-      data.description || text
+      data.description || text,
+      txDate
     ]);
 
     // 3. Format Balasan Konfirmasi Santai (Format Rupiah)
@@ -449,15 +452,19 @@ bot.on('text', async (ctx) => {
       maximumFractionDigits: 0
     }).format(data.amount);
 
+    const dateNotice = data.transaction_date
+      ? ` (tanggal: *${new Date(data.transaction_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}*)`
+      : '';
+
     let replyMsg = "";
     if (data.type === 'EXPENSE') {
-      replyMsg = `💸 Sip, pengeluaran *${formatRp}* buat *${data.category}* udah gue catat ya.`;
+      replyMsg = `💸 Sip, pengeluaran *${formatRp}* buat *${data.category}* udah gue catat ya${dateNotice}.`;
     } else if (data.type === 'INCOME') {
-      replyMsg = `💰 Asik! Pemasukan *${formatRp}* (${data.category}) udah masuk buku.`;
+      replyMsg = `💰 Asik! Pemasukan *${formatRp}* (${data.category}) udah masuk buku${dateNotice}.`;
     } else if (data.type === 'DEBT') {
-      replyMsg = `🤝 Oke, utang lo ke *${data.counterparty || 'temen'}* sebesar *${formatRp}* udah dicatat.`;
+      replyMsg = `🤝 Oke, utang lo ke *${data.counterparty || 'temen'}* sebesar *${formatRp}* udah dicatat${dateNotice}.`;
     } else if (data.type === 'RECEIVABLE') {
-      replyMsg = `📝 Mantap, piutang *${data.counterparty || 'temen'}* sebesar *${formatRp}* ke lo udah gue ingat.`;
+      replyMsg = `📝 Mantap, piutang *${data.counterparty || 'temen'}* sebesar *${formatRp}* ke lo udah gue ingat${dateNotice}.`;
     }
 
     await ctx.reply(replyMsg, { parse_mode: 'Markdown' });

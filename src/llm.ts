@@ -33,7 +33,8 @@ Aturan Ekstraksi:
 5. "description": Deskripsi singkat transaksi (misal: "makan siang ayam geprek", "kopi kenangan", "hp oppo a92").
 6. "tenor": Khusus untuk type "INSTALLMENT", jumlah bulan/kali cicilan (integer murni, misal: 12x -> 12). Berikan null jika bukan cicilan.
 7. "due_date": Khusus untuk type "INSTALLMENT", tanggal jatuh tempo tiap bulan (integer 1-31) jika disebutkan. Berikan null jika tidak ada.
-8. PENTING: Jika teks pengguna sama sekali BUKAN atau TIDAK BERKAITAN dengan transaksi keuangan (contoh: ngobrol biasa, cuaca, curhat, sapaan tanpa nominal uang), JANGAN mengarang data. Kembalikan JSON kosong {}.
+8. "transaction_date": Tanggal transaksi dalam format ISO string "YYYY-MM-DD" jika pengguna menyebutkan waktu atau tanggal lampau/relatif (contoh: "kemarin", "kemarin lusa", "3 hari lalu", "28 agustus", "tgl 15"). Jika pengguna TIDAK menyebutkan tanggal lampau atau waktu tertentu, berikan null (default transaksi hari ini).
+9. PENTING: Jika teks pengguna sama sekali BUKAN atau TIDAK BERKAITAN dengan transaksi keuangan (contoh: ngobrol biasa, cuaca, curhat, sapaan tanpa nominal uang), JANGAN mengarang data. Kembalikan JSON kosong {}.
 
 PENTING:
 - Hanya kembalikan objek JSON yang valid.
@@ -48,10 +49,14 @@ export interface ParsedTransaction {
   description: string;
   tenor?: number | null;
   due_date?: number | null;
+  transaction_date?: string | null;
 }
 
 export async function parseTransaction(text: string): Promise<ParsedTransaction | null> {
   try {
+    const todayDate = new Date().toISOString().split('T')[0];
+    const dynamicPrompt = `${SYSTEM_PROMPT}\nINFORMASI WAKTU SAAT INI:\nTanggal hari ini adalah ${todayDate}. Gunakan ini sebagai acuan jika pengguna menyebut kata relatif seperti "kemarin", "kemarin lusa", atau nama hari/bulan.`;
+
     // Timeout 10 detik untuk respon cepat
     const timeoutPromise = new Promise<null>((_, reject) =>
       setTimeout(() => reject(new Error("Gemini API request timed out (10s)")), 10000)
@@ -61,7 +66,7 @@ export async function parseTransaction(text: string): Promise<ParsedTransaction 
       model: 'gemini-3.5-flash-lite',
       contents: text,
       config: {
-        systemInstruction: SYSTEM_PROMPT,
+        systemInstruction: dynamicPrompt,
         responseMimeType: 'application/json',
         temperature: 0.1,
       }
