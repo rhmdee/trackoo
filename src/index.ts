@@ -69,6 +69,7 @@ bot.help((ctx) => {
     `• /summary — Cek rekapan pengeluaran & pemasukan bulan ini\n` +
     `• /hutang — Cek daftar hutang & piutang lo\n` +
     `• /tagihan — Liat daftar cicilan aktif lo\n` +
+    `• /hapustagihan <id> — Hapus atau lunasi cicilan\n` +
     `• /riwayat — Liat 5 transaksi terakhir & ID-nya\n` +
     `• /hapus <id> — Hapus transaksi tertentu\n` +
     `• /cleardata — Reset & bersihkan semua data transaksi\n\n` +
@@ -191,9 +192,10 @@ bot.command('tagihan', async (ctx) => {
   const telegramId = ctx.message.from.id.toString();
 
   const tagihanQuery = `
-    SELECT counterparty, description, total_amount, monthly_amount, tenor, paid_count, due_date
+    SELECT id, counterparty, description, total_amount, monthly_amount, tenor, paid_count, due_date
     FROM installments
-    WHERE user_id = $1 AND status = 'ACTIVE';
+    WHERE user_id = $1 AND status = 'ACTIVE'
+    ORDER BY id ASC;
   `;
 
   try {
@@ -212,21 +214,77 @@ bot.command('tagihan', async (ctx) => {
 
     let replyMsg = `🧾 *Daftar Cicilan Aktif Lo:*\n\n`;
 
-    res.rows.forEach((row, i) => {
+    const inlineButtons = res.rows.map((row, i) => {
       const sisaBulan = row.tenor - row.paid_count;
       const jatuhTempo = row.due_date ? ` (Tiap tgl ${row.due_date})` : "";
-      replyMsg += `${i + 1}. *${row.description}* (${row.counterparty})\n`;
+      replyMsg += `${i + 1}. *[ID: ${row.id}]* *${row.description}* (${row.counterparty})\n`;
       replyMsg += `   • Per bulan: *${formatRp(row.monthly_amount)}*${jatuhTempo}\n`;
       replyMsg += `   • Sisa cicilan: *${sisaBulan}x* lagi dari total ${row.tenor}x\n\n`;
+
+      return [{
+        text: `🗑️ Hapus ID: ${row.id} (${row.description.substring(0, 15)})`,
+        callback_data: `delete_inst_${row.id}`
+      }];
     });
 
-    await ctx.reply(replyMsg, { parse_mode: 'Markdown' });
+    replyMsg += `_Ketik \`/hapustagihan [ID]\` atau klik tombol di bawah untuk menghapus cicilan:_`;
+
+    await ctx.reply(replyMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: inlineButtons }
+    });
 
   } catch (err) {
     console.error("Gagal mengambil tagihan:", err);
     await ctx.reply("Aduh, gagal ngecek data tagihan nih. Coba lagi nanti ya. 🛠️");
   }
 });
+
+// Fungsi pembantu hapus cicilan
+async function deleteInstallmentById(userId: string, instId: string): Promise<boolean> {
+  const deleteQuery = `
+    DELETE FROM installments
+    WHERE id = $1 AND user_id = $2
+    RETURNING id, description;
+  `;
+  const res = await query(deleteQuery, [instId, userId]);
+  return res.rowCount !== null && res.rowCount > 0;
+}
+
+// --- PERINTAH /hapustagihan [id] ---
+bot.command('hapustagihan', async (ctx) => {
+  const telegramId = ctx.message.from.id.toString();
+  const args = ctx.message.text.trim().split(' ');
+
+  if (args.length < 2 || isNaN(Number(args[1]))) {
+    return ctx.reply("Format salah bro! Gunakan format: `/hapustagihan [ID]`\nContoh: `/hapustagihan 2`\n\nCek ID tagihan lo di perintah /tagihan", { parse_mode: 'Markdown' });
+  }
+
+  const instId = args[1];
+  const isDeleted = await deleteInstallmentById(telegramId, instId);
+
+  if (isDeleted) {
+    await ctx.reply(`✅ Cicilan [ID: ${instId}] berhasil dihapus dari daftar tagihan lo! 🗑️`);
+  } else {
+    await ctx.reply(`❌ Cicilan [ID: ${instId}] gak ditemukan atau bukan punya lo.`);
+  }
+});
+
+// Action handler tombol inline delete cicilan
+bot.action(/^delete_inst_(\d+)$/, async (ctx) => {
+  const instId = ctx.match[1];
+  const telegramId = ctx.from?.id.toString();
+  if (!telegramId) return;
+
+  const isDeleted = await deleteInstallmentById(telegramId, instId);
+  if (isDeleted) {
+    await ctx.answerCbQuery("Cicilan berhasil dihapus!");
+    await ctx.editMessageText(`✅ Cicilan [ID: ${instId}] sudah dihapus dari daftar tagihan! 🗑️`);
+  } else {
+    await ctx.answerCbQuery("Cicilan tidak ditemukan.");
+  }
+});
+
 
 // Fungsi pembantu untuk hapus transaksi
 async function deleteTransactionById(userId: string, txId: string): Promise<boolean> {
