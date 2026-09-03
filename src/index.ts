@@ -70,7 +70,8 @@ bot.help((ctx) => {
     `• /hutang — Cek daftar hutang & piutang lo\n` +
     `• /tagihan — Liat daftar cicilan aktif lo\n` +
     `• /riwayat — Liat 5 transaksi terakhir & ID-nya\n` +
-    `• /hapus <id> — Hapus transaksi tertentu\n\n` +
+    `• /hapus <id> — Hapus transaksi tertentu\n` +
+    `• /cleardata — Reset & bersihkan semua data transaksi\n\n` +
     `Gampang kan? Coba lo ketik sesuatu sekarang! 😉`,
     { parse_mode: 'Markdown' }
   );
@@ -329,6 +330,54 @@ bot.action(/^delete_tx_(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery("Transaksi tidak ditemukan.");
   }
 });
+
+// --- PERINTAH /cleardata ---
+bot.command('cleardata', async (ctx) => {
+  await ctx.reply(
+    "⚠️ *PERINGATAN PEMBERSIHAN DATA!*\n\n" +
+    "Semua riwayat transaksi dan catatan cicilan lo bakal dihapus permanen dari database.\n\n" +
+    "Apakah lo yakin mau membersihkan semua data?",
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🔥 Ya, Hapus Semua Data", callback_data: "confirm_cleardata" },
+            { text: "❌ Batalkan", callback_data: "cancel_cleardata" }
+          ]
+        ]
+      }
+    }
+  );
+});
+
+// Action konfirmasi hapus semua
+bot.action('confirm_cleardata', async (ctx) => {
+  const telegramId = ctx.from?.id.toString();
+  if (!telegramId) return;
+
+  try {
+    await query("DELETE FROM transactions WHERE user_id = $1;", [telegramId]);
+    await query("DELETE FROM installments WHERE user_id = $1;", [telegramId]);
+
+    await ctx.answerCbQuery("Semua data berhasil dibersihkan!");
+    await ctx.editMessageText(
+      "🧹 *Selesai!* Semua transaksi dan cicilan lo berhasil dibersihkan.\n\nPembukuan lo sekarang bersih dan siap dipakai lagi dari awal! ✨",
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err) {
+    console.error("Gagal membersihkan data:", err);
+    await ctx.answerCbQuery("Gagal membersihkan data.");
+    await ctx.editMessageText("Gagal membersihkan data karena masalah server. Coba lagi nanti ya. 🛠️");
+  }
+});
+
+// Action pembatalan
+bot.action('cancel_cleardata', async (ctx) => {
+  await ctx.answerCbQuery("Dibatalkan.");
+  await ctx.editMessageText("Sip, pembersihan data dibatalkan. Data lo tetap aman! 👍");
+});
+
 
 
 
