@@ -1,5 +1,6 @@
 import { Telegraf } from 'telegraf';
 import * as dotenv from 'dotenv';
+import cron from 'node-cron';
 import { query } from './db';
 import { parseTransaction } from './llm';
 
@@ -358,6 +359,44 @@ bot.on('text', async (ctx) => {
   } catch (err) {
     console.error("Gagal simpan transaksi:", err);
     await ctx.reply("Duh, server lagi gangguan dikit nih. Gagal nyimpen data. Coba lagi bentar ya! 🛠️");
+  }
+});
+
+// --- PENGINGAT JATUH TEMPO CICILAN HARIAN ---
+// Berjalan setiap jam 08:00 pagi setiap hari
+cron.schedule('0 8 * * *', async () => {
+  console.log("⏰ Menjalankan cron pengecekan jatuh tempo cicilan...");
+  const todayDate = new Date().getDate(); // 1-31
+
+  // Cari cicilan yang due_date-nya hari ini dan berstatus ACTIVE
+  const dueQuery = `
+    SELECT user_id, counterparty, description, monthly_amount
+    FROM installments
+    WHERE due_date = $1 AND status = 'ACTIVE';
+  `;
+
+  try {
+    const res = await query(dueQuery, [todayDate]);
+
+    for (const row of res.rows) {
+      const formatRp = new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0
+      }).format(row.monthly_amount);
+
+      const msg =
+        `🚨 *PENGINGAT JATUH TEMPO!* 🚨\n\n` +
+        `Bro, hari ini waktunya bayar cicilan *${row.description}* ke *${row.counterparty}*.\n` +
+        `Nominal: *${formatRp}*\n\n` +
+        `Jangan sampai telat biar gak kena denda ya! 💸`;
+
+      // Kirim notifikasi chat Telegram langsung ke pengguna
+      await bot.telegram.sendMessage(row.user_id, msg, { parse_mode: 'Markdown' });
+      console.log(`[REMINDER] Notifikasi jatuh tempo terkirim ke user ${row.user_id}`);
+    }
+  } catch (err) {
+    console.error("Gagal menjalankan cron pengingat cicilan:", err);
   }
 });
 
