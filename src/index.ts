@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf';
 import * as dotenv from 'dotenv';
 import { query } from './db';
+import { parseTransaction } from './llm';
 
 dotenv.config();
 
@@ -67,6 +68,22 @@ bot.help((ctx) => {
     `Gampang kan? Coba lo ketik sesuatu sekarang! 😉`,
     { parse_mode: 'Markdown' }
   );
+});
+
+// --- LISTENER PESAN TEKS BEBAS ---
+bot.on('text', async (ctx) => {
+  // Abaikan pesan jika diawali dengan "/" (karena itu adalah command)
+  if (ctx.message.text.startsWith('/')) {
+    return;
+  }
+
+  const text = ctx.message.text;
+  const telegramId = ctx.message.from.id.toString();
+
+  // Kirim feedback 'mengetik...' agar bot terlihat responsif
+  await ctx.sendChatAction('typing');
+
+  console.log(`[CHAT] Pesan masuk dari ${telegramId}: ${text}`);
 });
 
 // Jalankan Bot
