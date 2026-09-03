@@ -606,11 +606,97 @@ bot.on('text', async (ctx) => {
   // 1. Parsing dengan Gemini AI
   const data = await parseTransaction(text);
 
-  if (!data || !data.amount || !data.type) {
+  if (!data || !data.type) {
     return ctx.reply("Sori, gue kurang paham nih. Coba ketik lebih jelas ya, misal: 'Beli kopi 25rb'. 🤔");
   }
 
-  // Validasi nilai nominal tidak boleh nol atau negatif
+  // Khusus Pembayaran / Update Cicilan Yang Sudah Ada (PAY_INSTALLMENT)
+  if (data.type === 'PAY_INSTALLMENT') {
+    // Cari cicilan aktif milik user yang deskripsinya atau counterparty-nya cocok
+    const instSearchQuery = `
+      SELECT * FROM installments
+      WHERE user_id = $1 AND status = 'ACTIVE'
+      ORDER BY id ASC;
+    `;
+    const instRes = await query(instSearchQuery, [telegramId]);
+
+    if (instRes.rows.length === 0) {
+      return ctx.reply("Lo belum punya cicilan aktif yang terdaftar nih. Daftarkan dulu ya, misal: 'Cicilan kredivo hp 3jt 12x'.");
+    }
+
+    // Cocokkan dengan deskripsi atau counterparty
+    const searchWords = (data.description || text).toLowerCase().split(' ');
+    let matchedInst = instRes.rows.find(row => {
+      const rowDesc = (row.description + ' ' + row.counterparty).toLowerCase();
+      return searchWords.some(word => word.length > 2 && rowDesc.includes(word));
+    });
+
+    if (!matchedInst && instRes.rows.length === 1) {
+      matchedInst = instRes.rows[0]; // Jika cuma punya 1 cicilan aktif, langsung targetkan ke cicilan tersebut
+    }
+
+    if (!matchedInst) {
+      return ctx.reply("Gue bingung tagihan mana yang dimaksud. Coba cek daftar dan ID cicilan lo di /tagihan ya.");
+    }
+
+    const payCount = data.paid_count && data.paid_count > 0 ? data.paid_count : 1;
+    let newPaidCount: number;
+
+    // Jika pengguna bilang "sudah bayar 4x", kita set ke 4 jika lebih besar, atau tambahkan
+    if (text.toLowerCase().includes("sudah bayar") || text.toLowerCase().includes("udah bayar")) {
+      newPaidCount = Math.max(matchedInst.paid_count, payCount);
+    } else {
+      newPaidCount = matchedInst.paid_count + payCount;
+    }
+
+    const isCompleted = newPaidCount >= matchedInst.tenor;
+    const newStatus = isCompleted ? 'COMPLETED' : 'ACTIVE';
+
+    await query(
+      `UPDATE installments SET paid_count = $1, status = $2 WHERE id = $3 AND user_id = $4;`,
+      [newPaidCount, newStatus, matchedInst.id, telegramId]
+    );
+
+    // Otomatis catat pengeluarannya ke tabel transactions
+    const amountToLog = data.amount || Number(matchedInst.monthly_amount);
+    const txDate = data.transaction_date ? new Date(data.transaction_date) : new Date();
+
+    await query(
+      `INSERT INTO transactions (user_id, amount, type, category, counterparty, description, transaction_date)
+       VALUES ($1, $2, 'EXPENSE', 'Tagihan', $3, $4, $5);`,
+      [telegramId, amountToLog, matchedInst.counterparty, `Bayar cicilan ${matchedInst.description}`, txDate]
+    );
+
+    const formatRp = (num: number) =>
+      new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+
+    const sisa = Math.max(0, matchedInst.tenor - newPaidCount);
+
+    if (isCompleted) {
+      return ctx.reply(
+        `🎉 *SELAMAT! CICILAN LUNAS!*\n\n` +
+        `Pembayaran cicilan *${matchedInst.description}* (${matchedInst.counterparty}) sudah tuntas (${matchedInst.tenor}/${matchedInst.tenor})!\n` +
+        `Pengeluaran sebesar *${formatRp(amountToLog)}* otomatis dicatat ke buku lo. Bebas utang bosku! 🥳`,
+        { parse_mode: 'Markdown' }
+      );
+    } else {
+      return ctx.reply(
+        `✅ *Status Cicilan Berhasil Diperbarui!*\n\n` +
+        `• Cicilan: *${matchedInst.description}* (${matchedInst.counterparty})\n` +
+        `• Status Bayar: *${newPaidCount}x* dari total *${matchedInst.tenor}x*\n` +
+        `• Sisa Tenor: *${sisa}x* lagi\n` +
+        `• Pengeluaran: *${formatRp(amountToLog)}* (udah otomatis masuk /summary)\n\n` +
+        `Mantap, makin deket ke lunas! 💪`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+  }
+
+  // Validasi nilai nominal untuk transaksi biasa
+  if (!data.amount) {
+    return ctx.reply("Sori, gue kurang paham nih. Coba sebutkan nominal uangnya ya, misal: 'Beli kopi 25rb'. 🤔");
+  }
+
   if (data.amount <= 0) {
     return ctx.reply("Masa iya jumlah transaksinya nol? Yang bener aja dong! 😅");
   }
@@ -618,11 +704,12 @@ bot.on('text', async (ctx) => {
   // Khusus Pendaftaran Cicilan Baru (INSTALLMENT)
   if (data.type === 'INSTALLMENT') {
     const tenor = data.tenor && data.tenor > 0 ? data.tenor : 1;
+    const initialPaid = data.paid_count && data.paid_count >= 0 ? Math.min(data.paid_count, tenor) : 0;
     const monthlyAmount = Math.ceil(data.amount / tenor);
 
     const insertInstQuery = `
-      INSERT INTO installments (user_id, counterparty, description, total_amount, monthly_amount, tenor, due_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO installments (user_id, counterparty, description, total_amount, monthly_amount, tenor, paid_count, due_date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id;
     `;
 
@@ -634,6 +721,7 @@ bot.on('text', async (ctx) => {
         data.amount,
         monthlyAmount,
         tenor,
+        initialPaid,
         data.due_date || null
       ]);
 

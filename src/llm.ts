@@ -23,18 +23,20 @@ Aturan Ekstraksi:
    - "DEBT" (kita berhutang ke orang lain / minjam uang orang)
    - "RECEIVABLE" (orang lain berhutang ke kita / minjem uang kita)
    - "INSTALLMENT" (pendaftaran cicilan baru, kredit barang, pinjaman berjangka)
-2. "amount": Angka nominal (integer murni). Jika cicilan, ini adalah total hutang/harga barang keseluruhan jika disebutkan, atau nominal cicilan.
+   - "PAY_INSTALLMENT" (membayar angsuran cicilan yang sudah ada, atau mengabarkan sudah bayar cicilan sekian kali, misal: "tagihan kredivo iphone 14 sudah bayar 4x", "bayar cicilan oppo", "kredivo iphone bayar 1x")
+2. "amount": Angka nominal (integer murni). Jika cicilan, ini adalah total hutang/harga barang keseluruhan jika disebutkan, atau nominal cicilan. Beri null jika tidak disebutkan pada type "PAY_INSTALLMENT".
    Contoh konversi:
    - 25k / 25rb -> 25000
    - 1.5jt / 1,5 juta -> 1500000
    - 500 perak -> 500
 3. "category": Kategori singkat dalam bahasa Indonesia (misal: "Makanan & Minuman", "Transportasi", "Tagihan", "Gaji", "Belanja", "Hiburan", "Lain-lain").
 4. "counterparty": Nama orang atau pihak terkait/institusi (misal: "Budi", "Andi", "Kredivo", "ShopeePayLater", "BCA"). Beri null jika tidak ada.
-5. "description": Deskripsi singkat transaksi (misal: "makan siang ayam geprek", "kopi kenangan", "hp oppo a92").
-6. "tenor": Khusus untuk type "INSTALLMENT", jumlah bulan/kali cicilan (integer murni, misal: 12x -> 12). Berikan null jika bukan cicilan.
-7. "due_date": Khusus untuk type "INSTALLMENT", tanggal jatuh tempo tiap bulan (integer 1-31) jika disebutkan. Berikan null jika tidak ada.
-8. "transaction_date": Tanggal transaksi dalam format ISO string "YYYY-MM-DD" jika pengguna menyebutkan waktu atau tanggal lampau/relatif (contoh: "kemarin", "kemarin lusa", "3 hari lalu", "28 agustus", "tgl 15"). Jika pengguna TIDAK menyebutkan tanggal lampau atau waktu tertentu, berikan null (default transaksi hari ini).
-9. PENTING: Jika teks pengguna sama sekali BUKAN atau TIDAK BERKAITAN dengan transaksi keuangan (contoh: ngobrol biasa, cuaca, curhat, sapaan tanpa nominal uang), JANGAN mengarang data. Kembalikan JSON kosong {}.
+5. "description": Deskripsi singkat transaksi atau nama barang (misal: "makan siang ayam geprek", "kopi kenangan", "hp oppo a92", "iphone 14").
+6. "tenor": Khusus untuk type "INSTALLMENT", jumlah total bulan/kali cicilan (integer murni, misal: 12x -> 12). Berikan null jika bukan cicilan.
+7. "paid_count": Khusus jika pengguna menyebutkan sudah membayar cicilan berapa kali (contoh: "sudah bayar 4x" -> 4, "bayar cicilan ke-2" -> 2, "bayar 1x" -> 1). Berikan null jika tidak ada.
+8. "due_date": Khusus untuk type "INSTALLMENT", tanggal jatuh tempo tiap bulan (integer 1-31) jika disebutkan. Berikan null jika tidak ada.
+9. "transaction_date": Tanggal transaksi dalam format ISO string "YYYY-MM-DD" jika pengguna menyebutkan waktu atau tanggal lampau/relatif (contoh: "kemarin", "kemarin lusa", "3 hari lalu", "28 agustus", "tgl 15"). Jika pengguna TIDAK menyebutkan tanggal lampau atau waktu tertentu, berikan null (default transaksi hari ini).
+10. PENTING: Jika teks pengguna sama sekali BUKAN atau TIDAK BERKAITAN dengan transaksi keuangan (contoh: ngobrol biasa, cuaca, curhat, sapaan tanpa nominal uang), JANGAN mengarang data. Kembalikan JSON kosong {}.
 
 PENTING:
 - Hanya kembalikan objek JSON yang valid.
@@ -42,12 +44,13 @@ PENTING:
 `;
 
 export interface ParsedTransaction {
-  type: 'EXPENSE' | 'INCOME' | 'DEBT' | 'RECEIVABLE' | 'INSTALLMENT';
-  amount: number;
+  type: 'EXPENSE' | 'INCOME' | 'DEBT' | 'RECEIVABLE' | 'INSTALLMENT' | 'PAY_INSTALLMENT';
+  amount: number | null;
   category: string;
   counterparty: string | null;
   description: string;
   tenor?: number | null;
+  paid_count?: number | null;
   due_date?: number | null;
   transaction_date?: string | null;
 }
@@ -57,9 +60,9 @@ export async function parseTransaction(text: string): Promise<ParsedTransaction 
     const todayDate = new Date().toISOString().split('T')[0];
     const dynamicPrompt = `${SYSTEM_PROMPT}\nINFORMASI WAKTU SAAT INI:\nTanggal hari ini adalah ${todayDate}. Gunakan ini sebagai acuan jika pengguna menyebut kata relatif seperti "kemarin", "kemarin lusa", atau nama hari/bulan.`;
 
-    // Timeout 10 detik untuk respon cepat
+    // Timeout 20 detik untuk kehandalan ekstra
     const timeoutPromise = new Promise<null>((_, reject) =>
-      setTimeout(() => reject(new Error("Gemini API request timed out (10s)")), 10000)
+      setTimeout(() => reject(new Error("Gemini API request timed out (20s)")), 20000)
     );
 
     const apiPromise = ai.models.generateContent({
