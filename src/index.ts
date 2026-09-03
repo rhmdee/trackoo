@@ -70,7 +70,9 @@ bot.help((ctx) => {
     `• /hutang — Cek daftar hutang & piutang lo\n` +
     `• /tagihan — Liat daftar cicilan aktif lo\n` +
     `• /hapustagihan <id> — Hapus atau lunasi cicilan\n` +
+    `• /edittagihan <id> bayar — Catat bayar angsuran 1x\n` +
     `• /riwayat — Liat 5 transaksi terakhir & ID-nya\n` +
+    `• /edit <id> <koreksi> — Koreksi nominal/keterangan transaksi\n` +
     `• /hapus <id> — Hapus transaksi tertentu\n` +
     `• /cleardata — Reset & bersihkan semua data transaksi\n\n` +
     `Gampang kan? Coba lo ketik sesuatu sekarang! 😉`,
@@ -435,6 +437,135 @@ bot.action('cancel_cleardata', async (ctx) => {
   await ctx.answerCbQuery("Dibatalkan.");
   await ctx.editMessageText("Sip, pembersihan data dibatalkan. Data lo tetap aman! 👍");
 });
+
+// --- PERINTAH /edit [id] [koreksi baru] ---
+bot.command('edit', async (ctx) => {
+  const telegramId = ctx.message.from.id.toString();
+  const text = ctx.message.text.trim();
+  const parts = text.split(' ');
+
+  if (parts.length < 3 || isNaN(Number(parts[1]))) {
+    return ctx.reply(
+      "Format salah bro! Gunakan format:\n" +
+      "`/edit [ID] [koreksi baru]`\n\n" +
+      "Contoh koreksi nominal / keterangan:\n" +
+      "• `/edit 15 35rb`\n" +
+      "• `/edit 15 Beli bensin pertamax 50k`\n\n" +
+      "Cek ID transaksi lo pakai perintah /riwayat",
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const txId = parts[1];
+  const correctionText = parts.slice(2).join(' ');
+
+  // Pastikan transaksi ada dan milik user
+  const checkQuery = `SELECT id, amount, description, category FROM transactions WHERE id = $1 AND user_id = $2;`;
+  const checkRes = await query(checkQuery, [txId, telegramId]);
+
+  if (checkRes.rows.length === 0) {
+    return ctx.reply(`❌ Transaksi [ID: ${txId}] gak ketemu atau bukan punya lo.`);
+  }
+
+  await ctx.sendChatAction('typing');
+
+  // Gunakan AI untuk parsing teks koreksi
+  const data = await parseTransaction(correctionText);
+
+  if (!data || !data.amount) {
+    return ctx.reply("Sori bro, nominal koreksinya gak kebaca. Coba ketik yang jelas ya, misal: `/edit 15 50rb`", { parse_mode: 'Markdown' });
+  }
+
+  const newAmount = data.amount;
+  const newDesc = data.description || checkRes.rows[0].description;
+  const newCat = data.category || checkRes.rows[0].category;
+
+  const updateQuery = `
+    UPDATE transactions
+    SET amount = $1, description = $2, category = $3
+    WHERE id = $4 AND user_id = $5;
+  `;
+
+  try {
+    await query(updateQuery, [newAmount, newDesc, newCat, txId, telegramId]);
+
+    const formatRp = (num: number) =>
+      new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+
+    await ctx.reply(
+      `✏️ *Transaksi [ID: ${txId}] Berhasil Diperbarui!*\n\n` +
+      `• Nominal Baru: *${formatRp(newAmount)}*\n` +
+      `• Keterangan: *${newDesc}*\n` +
+      `• Kategori: *${newCat}*`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err) {
+    console.error("Gagal update transaksi:", err);
+    await ctx.reply("Duh, gagal ngupdate transaksi di database. Coba lagi bentar ya! 🛠️");
+  }
+});
+
+// --- PERINTAH /edittagihan [id] bayar / jatuhtempo ---
+bot.command('edittagihan', async (ctx) => {
+  const telegramId = ctx.message.from.id.toString();
+  const args = ctx.message.text.trim().split(' ');
+
+  if (args.length < 3 || isNaN(Number(args[1]))) {
+    return ctx.reply(
+      "Format salah bro! Gunakan format:\n\n" +
+      "1. Catat pembayaran 1x angsuran:\n" +
+      "`/edittagihan [ID] bayar`\n\n" +
+      "2. Ubah tanggal jatuh tempo:\n" +
+      "`/edittagihan [ID] jatuhtempo [tanggal 1-31]`\n" +
+      "Contoh: `/edittagihan 2 jatuhtempo 15`\n\n" +
+      "Cek ID cicilan lo di /tagihan",
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const instId = args[1];
+  const actionType = args[2].toLowerCase();
+
+  // Cek cicilan di DB
+  const checkQuery = `SELECT * FROM installments WHERE id = $1 AND user_id = $2;`;
+  const checkRes = await query(checkQuery, [instId, telegramId]);
+
+  if (checkRes.rows.length === 0) {
+    return ctx.reply(`❌ Cicilan [ID: ${instId}] gak ditemukan atau bukan punya lo.`);
+  }
+
+  const inst = checkRes.rows[0];
+
+  if (actionType === 'bayar') {
+    const newPaidCount = inst.paid_count + 1;
+    const isCompleted = newPaidCount >= inst.tenor;
+    const newStatus = isCompleted ? 'COMPLETED' : 'ACTIVE';
+
+    const updateQuery = `
+      UPDATE installments
+      SET paid_count = $1, status = $2
+      WHERE id = $3 AND user_id = $4;
+    `;
+    await query(updateQuery, [newPaidCount, newStatus, instId, telegramId]);
+
+    if (isCompleted) {
+      await ctx.reply(`🎉 *SELAMAT BRO!* Cicilan *${inst.description}* (${inst.counterparty}) sudah LUNAS seluruhnya (${inst.tenor}/${inst.tenor})! Bebas tanggungan! 🥳`, { parse_mode: 'Markdown' });
+    } else {
+      await ctx.reply(`✅ Berhasil mencatat 1x pembayaran untuk *${inst.description}*!\nSisa cicilan: *${inst.tenor - newPaidCount}x* lagi dari total ${inst.tenor}x.`, { parse_mode: 'Markdown' });
+    }
+  } else if (actionType === 'jatuhtempo' && args[3]) {
+    const newDueDate = parseInt(args[3], 10);
+    if (isNaN(newDueDate) || newDueDate < 1 || newDueDate > 31) {
+      return ctx.reply("Tanggal jatuh tempo harus antara 1 sampai 31 ya!");
+    }
+
+    await query(`UPDATE installments SET due_date = $1 WHERE id = $2 AND user_id = $3;`, [newDueDate, instId, telegramId]);
+    await ctx.reply(`📅 Tanggal jatuh tempo untuk *${inst.description}* berhasil diubah ke tiap tanggal *${newDueDate}*!`, { parse_mode: 'Markdown' });
+  } else {
+    await ctx.reply("Perintah tidak dikenali. Pilih antara `bayar` atau `jatuhtempo`.");
+  }
+});
+
 
 
 
