@@ -33,11 +33,11 @@ Untuk mempercepat pengembangan dan menjaga biaya tetap rendah di awal:
 ## 3. Tahapan Eksekusi (Phases)
 
 ### Phase 1: Bot Setup & Infrastructure (Minggu 1)
-- [ ] Inisialisasi *project* (Node.js + TypeScript).
-- [ ] Register bot di `@BotFather` Telegram dan dapatkan token.
-- [ ] Setup koneksi ke database PostgreSQL.
-- [ ] Implementasi perintah dasar: `/start` (menyimpan user ke DB) dan `/help`.
-- [ ] Setup *environment variables* (API Keys, DB Credentials).
+- [x] Inisialisasi *project* (Node.js + TypeScript).
+- [x] Register bot di `@BotFather` Telegram dan dapatkan token.
+- [x] Setup koneksi ke database PostgreSQL.
+- [x] Implementasi perintah dasar: `/start` (menyimpan user ke DB) dan `/help`.
+- [x] Setup *environment variables* (API Keys, DB Credentials).
 
 ### Phase 2: NLP Integration & Core Logging (Minggu 2)
 - [ ] Setup integrasi dengan LLM API (OpenAI / Gemini) beserta *system prompt* khusus untuk mem-parsing pesan.
