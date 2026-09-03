@@ -30,10 +30,11 @@ Aturan Ekstraksi:
 3. "category": Kategori singkat dalam bahasa Indonesia (misal: "Makanan & Minuman", "Transportasi", "Tagihan", "Gaji", "Belanja", "Hiburan", "Lain-lain").
 4. "counterparty": Nama orang atau pihak terkait khusus untuk DEBT dan RECEIVABLE (misal: "Budi", "Andi"). Beri null jika tidak ada.
 5. "description": Deskripsi singkat transaksi (misal: "makan siang ayam geprek", "kopi kenangan").
+6. PENTING: Jika teks pengguna sama sekali BUKAN atau TIDAK BERKAITAN dengan transaksi keuangan (contoh: ngobrol biasa, cuaca, curhat, sapaan tanpa nominal uang), JANGAN mengarang data. Kembalikan JSON kosong {}.
 
 PENTING:
 - Hanya kembalikan objek JSON yang valid.
-- Jangan tambahkan format markdown seperti \`\`\`json atau penjelasan lainnya.
+- Jangan tambahkan format markdown seperti backtick json atau penjelasan lainnya.
 `;
 
 export interface ParsedTransaction {
@@ -46,8 +47,13 @@ export interface ParsedTransaction {
 
 export async function parseTransaction(text: string): Promise<ParsedTransaction | null> {
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+    // Timeout 10 detik untuk respon cepat
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error("Gemini API request timed out (10s)")), 10000)
+    );
+
+    const apiPromise = ai.models.generateContent({
+      model: 'gemini-3.5-flash-lite',
       contents: text,
       config: {
         systemInstruction: SYSTEM_PROMPT,
@@ -55,6 +61,9 @@ export async function parseTransaction(text: string): Promise<ParsedTransaction 
         temperature: 0.1,
       }
     });
+
+    const response = await Promise.race([apiPromise, timeoutPromise]) as any;
+    if (!response) return null;
 
     const rawText = response.text || "{}";
     return JSON.parse(rawText) as ParsedTransaction;

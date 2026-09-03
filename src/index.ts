@@ -221,6 +221,11 @@ bot.on('text', async (ctx) => {
     return ctx.reply("Sori, gue kurang paham nih. Coba ketik lebih jelas ya, misal: 'Beli kopi 25rb'. 🤔");
   }
 
+  // Validasi nilai nominal tidak boleh nol atau negatif
+  if (data.amount <= 0) {
+    return ctx.reply("Masa iya jumlah transaksinya nol? Yang bener aja dong! 😅");
+  }
+
   // 2. Simpan ke tabel transactions di database
   const insertTxQuery = `
     INSERT INTO transactions (user_id, amount, type, category, counterparty, description)
